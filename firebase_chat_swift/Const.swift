@@ -18,4 +18,12 @@ class Const {
         alert.addAction(resultAlert)
         viewController.present(alert, animated: true, completion: nil)
     }
+    
+    func CurrentDateTimeToStr() -> String {
+        let currentDate = Date()
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "dd-MM-yyyy HH:mm"
+        return dateFormatter.string(from: currentDate)
+    }
 }
+

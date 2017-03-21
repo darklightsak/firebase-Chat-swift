@@ -11,6 +11,7 @@ import UIKit
 class ChatVCCell: UITableViewCell {
     
     @IBOutlet weak var TextLbl: UILabel!
+    @IBOutlet weak var DateTimeLbl: UILabel!
 
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -19,6 +20,7 @@ class ChatVCCell: UITableViewCell {
     
     func setValue(messageData:MessageData) { //ค่าที่ส่งไปใน Message Chat ไม่ได้มีแค่ txt
         TextLbl.text = messageData.MsgText
+        DateTimeLbl.text = messageData.MsgDateTime
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

@@ -14,7 +14,13 @@ class ChatVC: UIViewController, UITextFieldDelegate, UITableViewDelegate, UITabl
     @IBOutlet weak var inputMessageTxt: UITextField!
     @IBOutlet weak var tableView: UITableView!
     
-    var messageDataArray = [MessageData]()
+    var messageDataArray = [MessageData]() //ใช้งาน FirDatabase
+    
+//    var firDataSnapshotArray:[FIRDataSnapshot]! = [FIRDataSnapshot]() //แบบที่2
+    var databaseRef:FIRDatabaseReference!
+    private var _databaseHandle:FIRDatabaseHandle! = nil
+    //MARK: ตั้งuserEmail เพื่อใช้ในการตั้งชื่อเวลา add child
+    var userEmail: String = ""
     
     
     override func viewDidLoad() {
@@ -32,11 +38,78 @@ class ChatVC: UIViewController, UITextFieldDelegate, UITableViewDelegate, UITabl
         
         registerForKeyboardNotification() //เรียกใช้funcเลื่อนTextField ขึ้น-ลง ตามขนาด Keyboard
         
-        var messageData = MessageData(msgText: "Test1")
-        messageDataArray.append(messageData)
-        messageData = MessageData(msgText: "Test2")
-        messageDataArray.append(messageData)
+//        var messageData = MessageData(msgText: "Test1")
+//        messageDataArray.append(messageData)
+//        messageData = MessageData(msgText: "Test2")
+//        messageDataArray.append(messageData)
     }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        getUserEmail()
+//        databaseRelease() //เพื่อให้เคลียร์ค่าทิ้งทุกครั้งด้วย
+//        databaseInit() //ย้ายทั้ง2อันไป getUserEmail()
+    }
+    
+    func getUserEmail(){
+        let firAuthEmail = FIRAuth.auth()?.currentUser?.email
+        if firAuthEmail != nil {
+            
+            userEmail = firAuthEmail!
+            userEmail = replaceSpcialCharacter(inputStr: userEmail) //การตั้งชื่อ Child จะใส้ @.[]# ไม่ได้ แต่ใน E-mailมี
+            
+            databaseRelease()
+            databaseInit()
+        }
+    }
+    
+    func replaceSpcialCharacter(inputStr: String) -> String {
+        var outputStr = inputStr
+        
+        outputStr = outputStr.replacingOccurrences(of: ".", with: "-dot-")
+        outputStr = outputStr.replacingOccurrences(of: "#", with: "-sharp-")
+        outputStr = outputStr.replacingOccurrences(of: "$", with: "-dollar-")
+        outputStr = outputStr.replacingOccurrences(of: "[", with: "-start-")
+        outputStr = outputStr.replacingOccurrences(of: "]", with: "-end-")
+        
+        return outputStr
+    }
+    
+    func databaseInit(){
+        databaseRef = FIRDatabase.database().reference() //ดักพวกที่เป็น childAdd //มีชื่อว่า ChatData -> UPDATE: เปลี่ยนเป็น userEmail ให้ตั้งเป็นชื่อแทน
+//        //แบบที่2
+//        _databaseHandle = self.databaseRef.child(userEmail).observe(.childAdded, with: { (firebaseSnapshot) in 
+//        //เวลาเกิดการ Add data เข้ามาใน Database จะเกิด....
+//            self.firDataSnapshotArray.append(firebaseSnapshot) //ขอข้อมูล append เข้าไปใน array
+//            let indexPathOfLastRow = IndexPath(row: self.firDataSnapshotArray.count-1, section: 0) //แถวสุดท้าย
+//            self.tableView.insertRows(at: [indexPathOfLastRow], with: .automatic)
+//            
+//        })
+        
+        _databaseHandle = self.databaseRef.child(userEmail).observe(.value, with: { (firebaseSnapshot) in //.value จะทำงานทั้งหมด ดึงdataทั้งหมดออกมา
+            
+            self.messageDataArray = [] //เคลียร์Arrayทิ้ง เนื่องจากเวลา Data เข้ามาจะเข้ามาจาก database ซึ่งมีข้อมูลเก่าอยู่แล้ว
+            if let snapshot = firebaseSnapshot.children.allObjects as? [FIRDataSnapshot] {
+                for snap in snapshot {
+                    if let snapValue = snap.value as? Dictionary<String, AnyObject> {
+                        let key = snap.key
+                        let messageData = MessageData(priKey: key, data: snapValue)
+                        
+                        self.messageDataArray.append(messageData)
+                    }
+                }
+            }
+            self.tableView.reloadData()
+        })
+    }
+    
+    
+    func databaseRelease(){ //Release ข้อมูลเมื่อออก
+        if (_databaseHandle != nil) {
+            self.databaseRef.child(userEmail).removeObserver(withHandle: _databaseHandle)
+            _databaseHandle = nil //เพื่อ set ว่าให้ database ยังไม่เคย edit
+        }
+    } //->deinit
+    
     
     override func viewWillDisappear(_ animated: Bool) { //ตอนที่กำลังหายไป
 //        deregisterForKeyboardNotification()  Update: มีปัญหา keyboard เปลี่ยนไป deregister หลัง logout
@@ -55,7 +128,30 @@ class ChatVC: UIViewController, UITextFieldDelegate, UITableViewDelegate, UITabl
         }
     }
     
-    deinit { //Update: แก้ปัญหา Keyboard หลัง logout
+    //MARK: Send Button
+    @IBAction func sendBtn(_ sender: Any) {
+        if (inputMessageTxt.text!.characters.count > 0) {
+            let messageData = MessageData(msgText: inputMessageTxt.text!, msgDateTime: Const().CurrentDateTimeToStr())
+            sendMessage(messageData: messageData)
+            inputMessageTxt.text = ""
+        }
+    }
+    
+    func sendMessage(messageData: MessageData) {
+        
+        let dataValue: Dictionary<String, AnyObject> = [
+            MessageData.MSGTEXT_ID: messageData.MsgText as AnyObject,
+            //MessageData.MSGDATETIME_ID: messageData.MsgDateTime as AnyObject เปลี่ยนให้เป็น timestamp เพื่อทำให้ใช้งานได้พวกคำสั่งต่างๆได้
+            MessageData.MSGDATETIME_ID: FIRServerValue.timestamp() as AnyObject
+            
+        ]
+        self.databaseRef.child(userEmail).childByAutoId().setValue(dataValue) //ให้Gen id ที่ไม่ซ้ำกันเอง
+    }
+    
+    
+    deinit {
+        databaseRelease()
+        //Update: แก้ปัญหา Keyboard หลัง logout
         deregisterForKeyboardNotification()
     }
     
@@ -67,6 +163,7 @@ class ChatVC: UIViewController, UITextFieldDelegate, UITableViewDelegate, UITabl
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+//        return firDataSnapshotArray.count //แบบที่ 2
         return messageDataArray.count
     }
     
@@ -82,7 +179,36 @@ class ChatVC: UIViewController, UITextFieldDelegate, UITableViewDelegate, UITabl
             cell.setValue(messageData: messageData)
             return cell
         }
+        
+        //แบบที่2
+//        let firDataSnapshot = self.firDataSnapshotArray[indexPath.row]
+//        let snapshotValue = firDataSnapshot.value as! Dictionary<String, AnyObject>
+//        var strText = ""
+//        if let tempstrText = snapshotValue[MessageData.MSGTEXT_ID] as! String! {
+//            strText = tempstrText
+//        }
+//        var strDateTime = ""
+//        if let tempstrDateTime = snapshotValue[MessageData.MSGDATETIME_ID] as! String! {
+//            strDateTime = tempstrDateTime
+//        }
+//        
+//        if let cell = tableView.dequeueReusableCell(withIdentifier: "ChatCell") as? ChatVCCell {
+//            if (strText != "") {
+//                let messageData = MessageData(msgText: strText, msgDateTime: strDateTime)
+//                cell.setValue(messageData: messageData)
+//            }
+//            return cell
+//        }
+//        else {
+//            let cell = ChatVCCell()
+//            if (strText != "") {
+//                let messageData = MessageData(msgText: strText, msgDateTime: strDateTime)
+//                cell.setValue(messageData: messageData)
+//            }
+//            return cell
+//        }
     }
+    
     
     //---------------------------------------------------------------------------//
     
