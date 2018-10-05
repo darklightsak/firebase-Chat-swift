@@ -1,4 +1,4 @@
-# firebase-Chat-swift
+# Firebase Chat Swift
 Chat ios Application with FIREBASE!! #unfinished
 
 Open "firebase_chat_swift.xcworkspace" to Open my project.
